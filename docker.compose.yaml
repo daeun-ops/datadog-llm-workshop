@@ -1,0 +1,136 @@
+version: "3.9"
+
+services:
+  # ---- 로컬 LLaMA (OpenAI 호환) ----
+  localllama:
+    image: ollama/ollama:latest
+    container_name: localllama
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command: [ "serve" ]
+
+  # ---- Lab1: 간단 챗봇 API ----
+  api:
+    build: ./lab1-chatbot
+    container_name: api
+    env_file:
+      - ./.env
+    environment:
+      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
+      DD_LLMOBS_ML_APP: "${DD_LLMOBS_ML_APP:-lab1-chat}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      MODEL_NAME: "${MODEL_NAME:-llama3.1}"
+      HOST: "0.0.0.0"
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      localllama:
+        condition: service_healthy
+
+  # ---- RAG: ChromaDB Vector Store ----
+  vector-store:
+    image: chromadb/chromadb:latest
+    container_name: vector-store
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: "/chroma-data"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma:/chroma-data
+    ports:
+      - "8000:8000"
+
+  # ---- RAG: 텍스트 임베더(HTTP) ----
+  text-embedder:
+    build: ./lab2-rag/text-embedder
+    container_name: text-embedder
+    env_file:
+      - ./.env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "5001"
+    ports:
+      - "5001:5001"
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # ---- RAG: KB 적재 서비스 ----
+  kb_service:
+    build: ./lab2-rag/kb-service
+    container_name: kb_service
+    env_file:
+      - ./.env
+    environment:
+      CHROMA_URL: "${CHROMA_URL:-http://vector-store:8000}"
+      INDEX_NAME: "${INDEX_NAME:-kb_demo}"
+      EMBEDDER_URL: "http://text-embedder:5001"
+      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
+      DD_LLMOBS_ML_APP: "kb_service"
+      DD_SITE: "${DD_SITE:-datadoghq.com}"
+      DD_API_KEY: "${DD_API_KEY}"
+    volumes:
+      - ./lab2-rag/kb_data:/kb_data
+    depends_on:
+      - vector-store
+      - text-embedder
+
+  # ---- RAG: 질의 처리 백엔드 ----
+  api_rag:
+    build: ./lab2-rag/api
+    container_name: api_rag
+    env_file:
+      - ./.env
+    environment:
+      CHROMA_URL: "${CHROMA_URL:-http://vector-store:8000}"
+      INDEX_NAME: "${INDEX_NAME:-kb_demo}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      MODEL_NAME: "${MODEL_NAME:-llama3.1}"
+      TOP_K: "${TOP_K:-4}"
+      HOST: "0.0.0.0"
+      PORT: "8081"
+      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
+      DD_LLMOBS_ML_APP: "rag-api"
+      DD_SITE: "${DD_SITE:-datadoghq.com}"
+      DD_API_KEY: "${DD_API_KEY}"
+    ports:
+      - "8081:8081"
+    depends_on:
+      - vector-store
+      - localllama
+
+  # ---- RAG: 간단 프론트/게이트웨이 ----
+  chatbot:
+    build: ./lab2-rag/chatbot
+    container_name: chatbot
+    env_file:
+      - ./.env
+    environment:
+      API_URL: "http://api_rag:8081"
+      HOST: "0.0.0.0"
+      PORT: "8082"
+      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
+      DD_LLMOBS_ML_APP: "chatbot"
+      DD_SITE: "${DD_SITE:-datadoghq.com}"
+      DD_API_KEY: "${DD_API_KEY}"
+    ports:
+      - "8082:8082"
+    depends_on:
+      - api_rag
+
+volumes:
+  chroma:
+  ollama:
