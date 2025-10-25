@@ -7,7 +7,7 @@ from observability.dd import enable_llmobs_if_configured, enable_tracing_if_conf
 SERVICE = "rag-api"
 enable_llmobs_if_configured(SERVICE)
 enable_tracing_if_configured(SERVICE)
-
+enable_otel_if_configured(SERVICE)
 # retrieval
 with span("rag.retrieve", top_k=TOP_K, index=INDEX_NAME):
     res = col.query(query_texts=[q], n_results=TOP_K, include=["documents"])
