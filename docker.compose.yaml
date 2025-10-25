@@ -146,3 +146,50 @@ services:
 volumes:
   chroma:
   ollama:
+
+
+  # ... (기존 내용 그대로 유지) ...
+
+  # ---- Dash UI (RAG API에 붙는 대시보드) ----
+  dash-ui:
+    build: ./lab2-rag/dash-ui
+    container_name: dash-ui
+    env_file: [.env]
+    environment:
+      API_URL: http://api_rag:8081
+      # ddtrace + OTel 공통
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      OTEL_ENABLED: ${OTEL_ENABLED:-1}
+      OTEL_EXPORTER_DATADOG_AGENT_URL: ${OTEL_EXPORTER_DATADOG_AGENT_URL:-http://datadog-agent:8126}
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_ENV: ${DD_ENV:-workshop-local}
+      DD_SERVICE: dash-ui
+      DD_VERSION: ${DD_VERSION:-0.1.0}
+    ports: ["8050:8050"]
+    depends_on:
+      - datadog-agent
+      - api_rag
+
+  # ---- Streamlit UI (RAG용 간단 QA 패널) ----
+  streamlit-ui:
+    build: ./lab2-rag/streamlit-ui
+    container_name: streamlit-ui
+    env_file: [.env]
+    environment:
+      API_URL: http://api_rag:8081
+      # ddtrace + OTel 공통
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      OTEL_ENABLED: ${OTEL_ENABLED:-1}
+      OTEL_EXPORTER_DATADOG_AGENT_URL: ${OTEL_EXPORTER_DATADOG_AGENT_URL:-http://datadog-agent:8126}
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_ENV: ${DD_ENV:-workshop-local}
+      DD_SERVICE: streamlit-ui
+      DD_VERSION: ${DD_VERSION:-0.1.0}
+    ports: ["8501:8501"]
+    depends_on:
+      - datadog-agent
+      - api_rag
