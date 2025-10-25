@@ -1,7 +1,30 @@
 version: "3.9"
 
+x-common-env: &common-env
+  DD_SITE: ${DD_SITE:-datadoghq.com}
+  DD_ENV: ${DD_ENV:-workshop-local}
+  DD_SERVICE: ${DD_SERVICE:-quantumhound}
+  DD_VERSION: ${DD_VERSION:-0.1.0}
+
 services:
-  # ---- 로컬 LLaMA (OpenAI 호환) ----
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:latest
+    container_name: datadog-agent
+    environment:
+      <<: *common-env
+      DD_API_KEY: ${DD_API_KEY}
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      DD_LOGS_ENABLED: "true"
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+      DD_CONTAINER_EXCLUDE_LOGS: "name:datadog-agent"
+    ports:
+      - "8126:8126"   # APM
+      - "8125:8125/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
   localllama:
     image: ollama/ollama:latest
     container_name: localllama
@@ -15,29 +38,25 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    command: [ "serve" ]
+    command: ["serve"]
 
-  # ---- Lab1: 간단 챗봇 API ----
+  # Lab1 — Chatbot API
   api:
     build: ./lab1-chatbot
     container_name: api
-    env_file:
-      - ./.env
+    env_file: [.env]
     environment:
-      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
-      DD_LLMOBS_ML_APP: "${DD_LLMOBS_ML_APP:-lab1-chat}"
-      OPENAI_BASE_URL: "${OPENAI_BASE_URL}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      MODEL_NAME: "${MODEL_NAME:-llama3.1}"
-      HOST: "0.0.0.0"
-      PORT: "8080"
-    ports:
-      - "8080:8080"
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+    ports: ["8080:8080"]
     depends_on:
+      datadog-agent:
+        condition: service_started
       localllama:
         condition: service_healthy
 
-  # ---- RAG: ChromaDB Vector Store ----
+  # RAG — Chroma
   vector-store:
     image: chromadb/chromadb:latest
     container_name: vector-store
@@ -48,87 +67,80 @@ services:
       ANONYMIZED_TELEMETRY: "FALSE"
     volumes:
       - chroma:/chroma-data
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
 
-  # ---- RAG: 텍스트 임베더(HTTP) ----
+  # RAG — Embedder
   text-embedder:
     build: ./lab2-rag/text-embedder
     container_name: text-embedder
-    env_file:
-      - ./.env
+    env_file: [.env]
     environment:
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
       HOST: "0.0.0.0"
       PORT: "5001"
-    ports:
-      - "5001:5001"
-    deploy:
-      resources:
-        limits:
-          memory: 2g
+    ports: ["5001:5001"]
+    depends_on:
+      - datadog-agent
 
-  # ---- RAG: KB 적재 서비스 ----
+  # RAG — KB ingestion
   kb_service:
     build: ./lab2-rag/kb-service
     container_name: kb_service
-    env_file:
-      - ./.env
+    env_file: [.env]
     environment:
-      CHROMA_URL: "${CHROMA_URL:-http://vector-store:8000}"
-      INDEX_NAME: "${INDEX_NAME:-kb_demo}"
-      EMBEDDER_URL: "http://text-embedder:5001"
-      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
-      DD_LLMOBS_ML_APP: "kb_service"
-      DD_SITE: "${DD_SITE:-datadoghq.com}"
-      DD_API_KEY: "${DD_API_KEY}"
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      CHROMA_URL: ${CHROMA_URL:-http://vector-store:8000}
+      INDEX_NAME: ${INDEX_NAME:-kb_demo}
+      EMBEDDER_URL: http://text-embedder:5001
     volumes:
       - ./lab2-rag/kb_data:/kb_data
     depends_on:
+      - datadog-agent
       - vector-store
       - text-embedder
 
-  # ---- RAG: 질의 처리 백엔드 ----
+  # RAG — Retrieval/Generation API
   api_rag:
     build: ./lab2-rag/api
     container_name: api_rag
-    env_file:
-      - ./.env
+    env_file: [.env]
     environment:
-      CHROMA_URL: "${CHROMA_URL:-http://vector-store:8000}"
-      INDEX_NAME: "${INDEX_NAME:-kb_demo}"
-      OPENAI_BASE_URL: "${OPENAI_BASE_URL}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      MODEL_NAME: "${MODEL_NAME:-llama3.1}"
-      TOP_K: "${TOP_K:-4}"
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      CHROMA_URL: ${CHROMA_URL:-http://vector-store:8000}
+      INDEX_NAME: ${INDEX_NAME:-kb_demo}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MODEL_NAME: ${MODEL_NAME:-llama3.1}
+      TOP_K: ${TOP_K:-4}
       HOST: "0.0.0.0"
       PORT: "8081"
-      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
-      DD_LLMOBS_ML_APP: "rag-api"
-      DD_SITE: "${DD_SITE:-datadoghq.com}"
-      DD_API_KEY: "${DD_API_KEY}"
-    ports:
-      - "8081:8081"
+    ports: ["8081:8081"]
     depends_on:
+      - datadog-agent
       - vector-store
       - localllama
 
-  # ---- RAG: 간단 프론트/게이트웨이 ----
+  # RAG — Chatbot(front)
   chatbot:
     build: ./lab2-rag/chatbot
     container_name: chatbot
-    env_file:
-      - ./.env
+    env_file: [.env]
     environment:
-      API_URL: "http://api_rag:8081"
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      API_URL: http://api_rag:8081
       HOST: "0.0.0.0"
       PORT: "8082"
-      DD_LLMOBS_ENABLED: "${DD_LLMOBS_ENABLED:-0}"
-      DD_LLMOBS_ML_APP: "chatbot"
-      DD_SITE: "${DD_SITE:-datadoghq.com}"
-      DD_API_KEY: "${DD_API_KEY}"
-    ports:
-      - "8082:8082"
+    ports: ["8082:8082"]
     depends_on:
+      - datadog-agent
       - api_rag
 
 volumes:
