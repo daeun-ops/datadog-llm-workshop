@@ -1,5 +1,15 @@
 import os, requests
 from dotenv import load_dotenv
+from observability.dd import (
+    enable_llmobs_if_configured, enable_tracing_if_configured, span, jlog
+)
+SERVICE = "kb_service"
+enable_llmobs_if_configured(SERVICE)
+enable_tracing_if_configured(SERVICE)
+
+with span("rag.embed", count=len(texts), index=INDEX_NAME):
+    vectors = embed(texts)
+jlog(event="kb.ingested", count=len(ids), index=INDEX_NAME)
 load_dotenv()
 
 # --- Datadog LLMObs (옵션) ---
