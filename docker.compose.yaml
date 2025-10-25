@@ -1,0 +1,255 @@
+version: "3.9"
+
+# ──────────────────────────────────────────────────────────
+# Common env anchor
+# ──────────────────────────────────────────────────────────
+x-common-env: &common-env
+  DD_SITE: ${DD_SITE:-datadoghq.com}
+  DD_ENV: ${DD_ENV:-workshop-local}
+  DD_SERVICE: ${DD_SERVICE:-quantumhound}
+  DD_VERSION: ${DD_VERSION:-0.1.0}
+
+# ──────────────────────────────────────────────────────────
+# Services
+# ──────────────────────────────────────────────────────────
+services:
+  # ==================== Datadog Agent (APM) ====================
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:latest
+    container_name: datadog-agent
+    environment:
+      <<: *common-env
+      DD_API_KEY: ${DD_API_KEY}
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      DD_LOGS_ENABLED: "true"
+      DD_DOGSTATSD_NON_LOCAL_TRAFFIC: "true"
+      DD_CONTAINER_EXCLUDE_LOGS: "name:datadog-agent"
+    ports:
+      - "8126:8126"         # APM
+      - "8125:8125/udp"     # DogStatsD
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  # ==================== Grafana Tempo (OTLP) ====================
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+    ports:
+      - "3200:3200"   # Tempo Query
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    restart: unless-stopped
+
+  # ==================== Grafana (UI) ====================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: grafana
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+      - loki
+    restart: unless-stopped
+
+  # ==================== Loki (Logs) ====================
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  # ==================== Promtail (Log collector) ====================
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # ← Docker 로그 자동 발견
+      - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  # ==================== Ollama (Local LLM) ====================
+  localllama:
+    image: ollama/ollama:latest
+    container_name: localllama
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command: ["serve"]
+
+  # ==================== Lab1 — Chatbot API ====================
+  api:
+    build: ./lab1-chatbot
+    container_name: api
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+    ports: ["8080:8080"]
+    depends_on:
+      datadog-agent:
+        condition: service_started
+      localllama:
+        condition: service_healthy
+
+  # ==================== RAG — Chroma Vector DB ====================
+  vector-store:
+    image: chromadb/chromadb:latest
+    container_name: vector-store
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: "/chroma-data"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma:/chroma-data
+    ports: ["8000:8000"]
+
+  # ==================== RAG — Embedder ====================
+  text-embedder:
+    build: ./lab2-rag/text-embedder
+    container_name: text-embedder
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      HOST: "0.0.0.0"
+      PORT: "5001"
+    ports: ["5001:5001"]
+    depends_on:
+      - datadog-agent
+
+  # ==================== RAG — KB ingestion ====================
+  kb_service:
+    build: ./lab2-rag/kb-service
+    container_name: kb_service
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      CHROMA_URL: ${CHROMA_URL:-http://vector-store:8000}
+      INDEX_NAME: ${INDEX_NAME:-kb_demo}
+      EMBEDDER_URL: http://text-embedder:5001
+    volumes:
+      - ./lab2-rag/kb_data:/kb_data
+    depends_on:
+      - datadog-agent
+      - vector-store
+      - text-embedder
+
+  # ==================== RAG — Retrieval/Generation API ====================
+  api_rag:
+    build: ./lab2-rag/api
+    container_name: api_rag
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      CHROMA_URL: ${CHROMA_URL:-http://vector-store:8000}
+      INDEX_NAME: ${INDEX_NAME:-kb_demo}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MODEL_NAME: ${MODEL_NAME:-llama3.1}
+      TOP_K: ${TOP_K:-4}
+      HOST: "0.0.0.0"
+      PORT: "8081"
+      # ── OTel → Tempo/Datadog Exporter는 .env에서 제어 (이미 앱 코드에 반영됨)
+    ports: ["8081:8081"]
+    depends_on:
+      - datadog-agent
+      - vector-store
+      - localllama
+
+  # ==================== RAG — Chatbot(front) ====================
+  chatbot:
+    build: ./lab2-rag/chatbot
+    container_name: chatbot
+    env_file: [.env]
+    environment:
+      <<: *common-env
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      API_URL: http://api_rag:8081
+      HOST: "0.0.0.0"
+      PORT: "8082"
+    ports: ["8082:8082"]
+    depends_on:
+      - datadog-agent
+      - api_rag
+
+  # ==================== Dash UI (RAG Dashboard) ====================
+  dash-ui:
+    build: ./lab2-rag/dash-ui
+    container_name: dash-ui
+    env_file: [.env]
+    environment:
+      API_URL: http://api_rag:8081
+      # ddtrace + OTel 공통
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      OTEL_ENABLED: ${OTEL_ENABLED:-1}
+      OTEL_EXPORTER_DATADOG_AGENT_URL: ${OTEL_EXPORTER_DATADOG_AGENT_URL:-http://datadog-agent:8126}
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_ENV: ${DD_ENV:-workshop-local}
+      DD_SERVICE: dash-ui
+      DD_VERSION: ${DD_VERSION:-0.1.0}
+    ports: ["8050:8050"]
+    depends_on:
+      - datadog-agent
+      - api_rag
+
+  # ==================== Streamlit UI (RAG QA Panel) ====================
+  streamlit-ui:
+    build: ./lab2-rag/streamlit-ui
+    container_name: streamlit-ui
+    env_file: [.env]
+    environment:
+      API_URL: http://api_rag:8081
+      # ddtrace + OTel 공통
+      DD_AGENT_HOST: datadog-agent
+      DD_TRACE_AGENT_URL: http://datadog-agent:8126
+      OTEL_ENABLED: ${OTEL_ENABLED:-1}
+      OTEL_EXPORTER_DATADOG_AGENT_URL: ${OTEL_EXPORTER_DATADOG_AGENT_URL:-http://datadog-agent:8126}
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      DD_ENV: ${DD_ENV:-workshop-local}
+      DD_SERVICE: streamlit-ui
+      DD_VERSION: ${DD_VERSION:-0.1.0}
+    ports: ["8501:8501"]
+    depends_on:
+      - datadog-agent
+      - api_rag
+
+# ──────────────────────────────────────────────────────────
+# Volumes
+# ──────────────────────────────────────────────────────────
+volumes:
+  chroma:
+  ollama:
