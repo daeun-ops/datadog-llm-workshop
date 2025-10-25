@@ -1,0 +1,30 @@
+{"question": "What model does this demo use?", "ground_truth": "llama"}
+{"question": "Which LLM provider is configured for inference?", "ground_truth": "ollama"}
+{"question": "Where are application logs collected?", "ground_truth": "Loki"}
+{"question": "What tool visualizes metrics and exemplars?", "ground_truth": "Grafana"}
+{"question": "Which tracing backend supports OTLP protocol?", "ground_truth": "Tempo"}
+{"question": "What observability platform is integrated for APM?", "ground_truth": "Datadog"}
+{"question": "What is the default retrieval top_k value?", "ground_truth": "8"}
+{"question": "Which two retrieval types are combined in the hybrid retriever?", "ground_truth": "dense and sparse"}
+{"question": "What library is used for keyword similarity scoring?", "ground_truth": "RapidFuzz"}
+{"question": "Which reranker model is used for cross-encoder re-ranking?", "ground_truth": "BAAI/bge-reranker-large"}
+{"question": "What format does the /ask endpoint return its response in?", "ground_truth": "JSON"}
+{"question": "What HTTP port does the rag-api service expose?", "ground_truth": "8081"}
+{"question": "Which service handles embeddings in this architecture?", "ground_truth": "text-embedder"}
+{"question": "Where are knowledge base documents stored?", "ground_truth": "Chroma"}
+{"question": "Which Prometheus metric tracks answer length?", "ground_truth": "rag_answer_length_chars"}
+{"question": "What environment variable enables LLM Observability?", "ground_truth": "DD_LLMOBS_ENABLED"}
+{"question": "What is the default Datadog site used?", "ground_truth": "datadoghq.com"}
+{"question": "Which endpoint can users send thumbs-up feedback to?", "ground_truth": "/feedback"}
+{"question": "How can prompt version be overridden in a request?", "ground_truth": "X-Prompt-Version header"}
+{"question": "Which header allows manual model override?", "ground_truth": "X-Model-Override"}
+{"question": "What file stores accumulated feedback data?", "ground_truth": "data/feedback.jsonl"}
+{"question": "What CI workflow file runs RAG evaluation?", "ground_truth": "eval.yml"}
+{"question": "Which function combines context and query for answer generation?", "ground_truth": "build_prompt"}
+{"question": "What command runs Prometheus metrics locally?", "ground_truth": "curl localhost:8081/metrics"}
+{"question": "Which field represents the retrieved document similarity score?", "ground_truth": "dense_sim"}
+{"question": "Which observability span tracks retrieval latency?", "ground_truth": "rag.retrieve"}
+{"question": "Which span tracks LLM generation latency?", "ground_truth": "llm.generate"}
+{"question": "Where are Docker logs automatically discovered from?", "ground_truth": "/var/run/docker.sock"}
+{"question": "Which Grafana datasource links logs to traces?", "ground_truth": "Tempo"}
+{"question": "What command starts the local Flask API?", "ground_truth": "python lab2-rag/api/app.py"}
