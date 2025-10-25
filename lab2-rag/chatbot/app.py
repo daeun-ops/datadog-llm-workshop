@@ -5,7 +5,7 @@ from observability.dd import enable_llmobs_if_configured, enable_tracing_if_conf
 SERVICE = "chatbot"
 enable_llmobs_if_configured(SERVICE)
 enable_tracing_if_configured(SERVICE)
-
+enable_otel_if_configured(SERVICE)
 with span("chatbot.forward", target="api_rag"):
     r = requests.post(f"{API_URL}/ask", json={"question":q}, timeout=120)
 
