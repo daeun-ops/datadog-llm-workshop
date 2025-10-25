@@ -10,11 +10,12 @@ x-common-env: &common-env
   DD_VERSION: ${DD_VERSION:-0.1.0}
 
 # ──────────────────────────────────────────────────────────
-# Services
+# Services (profiles: obs / core / ui)
 # ──────────────────────────────────────────────────────────
 services:
-  # ==================== Datadog Agent (APM) ====================
+  # ==================== Observability Stack ====================
   datadog-agent:
+    profiles: ["obs"]
     image: gcr.io/datadoghq/agent:latest
     container_name: datadog-agent
     environment:
@@ -31,22 +32,32 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8126'"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
 
-  # ==================== Grafana Tempo (OTLP) ====================
   tempo:
+    profiles: ["obs"]
     image: grafana/tempo:latest
     container_name: tempo
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
       - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
     ports:
-      - "3200:3200"   # Tempo Query
+      - "3200:3200"   # Query
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3200/ready || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
-  # ==================== Grafana (UI) ====================
   grafana:
+    profiles: ["obs"]
     image: grafana/grafana:latest
     container_name: grafana
     environment:
@@ -59,9 +70,14 @@ services:
       - tempo
       - loki
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
-  # ==================== Loki (Logs) ====================
   loki:
+    profiles: ["obs"]
     image: grafana/loki:2.9.8
     container_name: loki
     command: ["-config.file=/etc/loki/local-config.yaml"]
@@ -70,21 +86,32 @@ services:
     ports:
       - "3100:3100"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
-  # ==================== Promtail (Log collector) ====================
   promtail:
+    profiles: ["obs"]
     image: grafana/promtail:2.9.8
     container_name: promtail
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro   # ← Docker 로그 자동 발견
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
     depends_on:
       - loki
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9080/metrics || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
 
-  # ==================== Ollama (Local LLM) ====================
+  # ==================== Core Runtime ====================
   localllama:
+    profiles: ["core"]
     image: ollama/ollama:latest
     container_name: localllama
     restart: unless-stopped
@@ -92,15 +119,16 @@ services:
       - ollama:/root/.ollama
     ports:
       - "11434:11434"
+    command: ["serve"]
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
       retries: 10
-    command: ["serve"]
 
-  # ==================== Lab1 — Chatbot API ====================
+  # Lab1 — Chatbot API
   api:
+    profiles: ["core"]
     build: ./lab1-chatbot
     container_name: api
     env_file: [.env]
@@ -114,9 +142,15 @@ services:
         condition: service_started
       localllama:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz | grep -q 'ok'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
-  # ==================== RAG — Chroma Vector DB ====================
+  # RAG — Chroma Vector DB
   vector-store:
+    profiles: ["core"]
     image: chromadb/chromadb:latest
     container_name: vector-store
     restart: unless-stopped
@@ -127,9 +161,15 @@ services:
     volumes:
       - chroma:/chroma-data
     ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/v1/heartbeat | grep -q '\"status\"'"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
 
-  # ==================== RAG — Embedder ====================
+  # RAG — Embedder
   text-embedder:
+    profiles: ["core"]
     build: ./lab2-rag/text-embedder
     container_name: text-embedder
     env_file: [.env]
@@ -142,9 +182,15 @@ services:
     ports: ["5001:5001"]
     depends_on:
       - datadog-agent
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5001/healthz | grep -q 'ok'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
-  # ==================== RAG — KB ingestion ====================
+  # RAG — KB ingestion (batch-ish)
   kb_service:
+    profiles: ["core"]
     build: ./lab2-rag/kb-service
     container_name: kb_service
     env_file: [.env]
@@ -161,9 +207,16 @@ services:
       - datadog-agent
       - vector-store
       - text-embedder
+    healthcheck:
+      # expose /metrics:9100 or just TCP check
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9100' || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
 
-  # ==================== RAG — Retrieval/Generation API ====================
+  # RAG — Retrieval/Generation API
   api_rag:
+    profiles: ["core"]
     build: ./lab2-rag/api
     container_name: api_rag
     env_file: [.env]
@@ -179,15 +232,20 @@ services:
       TOP_K: ${TOP_K:-4}
       HOST: "0.0.0.0"
       PORT: "8081"
-      # ── OTel → Tempo/Datadog Exporter는 .env에서 제어 (이미 앱 코드에 반영됨)
     ports: ["8081:8081"]
     depends_on:
       - datadog-agent
       - vector-store
       - localllama
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz | grep -q 'ok'"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
 
-  # ==================== RAG — Chatbot(front) ====================
+  # ==================== UI Layer ====================
   chatbot:
+    profiles: ["ui"]
     build: ./lab2-rag/chatbot
     container_name: chatbot
     env_file: [.env]
@@ -202,15 +260,20 @@ services:
     depends_on:
       - datadog-agent
       - api_rag
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/healthz | grep -q 'ok'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
-  # ==================== Dash UI (RAG Dashboard) ====================
   dash-ui:
+    profiles: ["ui"]
     build: ./lab2-rag/dash-ui
     container_name: dash-ui
     env_file: [.env]
     environment:
       API_URL: http://api_rag:8081
-      # ddtrace + OTel 공통
+      # ddtrace + OTel common
       DD_AGENT_HOST: datadog-agent
       DD_TRACE_AGENT_URL: http://datadog-agent:8126
       OTEL_ENABLED: ${OTEL_ENABLED:-1}
@@ -224,15 +287,20 @@ services:
     depends_on:
       - datadog-agent
       - api_rag
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8050/ | grep -qi '<html'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
 
-  # ==================== Streamlit UI (RAG QA Panel) ====================
   streamlit-ui:
+    profiles: ["ui"]
     build: ./lab2-rag/streamlit-ui
     container_name: streamlit-ui
     env_file: [.env]
     environment:
       API_URL: http://api_rag:8081
-      # ddtrace + OTel 공통
+      # ddtrace + OTel common
       DD_AGENT_HOST: datadog-agent
       DD_TRACE_AGENT_URL: http://datadog-agent:8126
       OTEL_ENABLED: ${OTEL_ENABLED:-1}
@@ -246,6 +314,11 @@ services:
     depends_on:
       - datadog-agent
       - api_rag
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8501/healthz || wget -qO- http://127.0.0.1:8501/ | grep -qi '<html'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
 
 # ──────────────────────────────────────────────────────────
 # Volumes
