@@ -3,6 +3,20 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from chromadb import HttpClient
 from openai import OpenAI
+from observability.dd import enable_llmobs_if_configured, enable_tracing_if_configured, span, jlog
+SERVICE = "rag-api"
+enable_llmobs_if_configured(SERVICE)
+enable_tracing_if_configured(SERVICE)
+
+# retrieval
+with span("rag.retrieve", top_k=TOP_K, index=INDEX_NAME):
+    res = col.query(query_texts=[q], n_results=TOP_K, include=["documents"])
+
+# generation
+with span("llm.generate", model=MODEL, provider="ollama"):
+    out = client.chat.completions.create(...)
+
+jlog(event="rag.answer", question=q, source_count=len(contexts))
 
 load_dotenv()
 
