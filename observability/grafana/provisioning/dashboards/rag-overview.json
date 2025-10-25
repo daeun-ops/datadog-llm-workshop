@@ -1,0 +1,22 @@
+{
+  "annotations": {"list":[]},
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "panels": [
+    {
+      "type": "traces",
+      "title": "Tempo Traces (RAG)",
+      "datasource": {"type":"tempo","uid":"Tempo"},
+      "gridPos": {"h":20,"w":24,"x":0,"y":0},
+      "targets": [{"query": ""}]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["llm","rag","tempo"],
+  "templating": {"list":[]},
+  "time": {"from":"now-6h","to":"now"},
+  "timezone": "",
+  "title": "RAG Overview (Tempo)"
+}
