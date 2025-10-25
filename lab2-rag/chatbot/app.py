@@ -44,3 +44,7 @@ def health():
 
 if __name__ == "__main__":
     app.run(host=os.getenv("HOST","0.0.0.0"), port=int(os.getenv("PORT","8082")))
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}, 200
