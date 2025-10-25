@@ -240,3 +240,23 @@ services:
 
   # ----- 이하 기존 localllama / api / vector-store / text-embedder / kb_service / api_rag / chatbot / dash-ui / streamlit-ui 유지 -----
   # (각 서비스 env에 이미 OTEL_ENABLED, OTEL_EXPORTER_DATADOG_AGENT_URL 전달 중)
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro   # Docker 로그 자동 발견
+      - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
