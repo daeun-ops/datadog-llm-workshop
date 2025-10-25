@@ -1,0 +1,7 @@
+streamlit>=1.37.0
+requests>=2.32.3
+opentelemetry-api>=1.25.0
+opentelemetry-sdk>=1.25.0
+opentelemetry-exporter-datadog>=0.50b0
+# ddtrace는 선택
+# ddtrace>=2.7,<2.10
