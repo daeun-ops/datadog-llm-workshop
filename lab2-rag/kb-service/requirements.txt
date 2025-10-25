@@ -1,0 +1,5 @@
+chromadb>=0.5.0
+requests>=2.32.3
+python-dotenv>=1.0.1
+# ddtrace는 선택
+# ddtrace>=2.7,<2.10
