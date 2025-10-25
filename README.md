@@ -1,11 +1,12 @@
 # datadog-llm-workshop
-Datadog Summit Seoul 2025 (10/24)
+### Datadog Summit Seoul 2025 (2025/10/24)
+##### [작은 LLM 애플리케이션 개발부터 관측까지](https://events.datadoghq.com/ko/summits/datadog-summit-seoul/agenda/jageun-llm-aepeulrikeisyeon-gaebalbuteo-gwanceugggaji/) 
 
 
+---
 ## Intro
-
-> “Datadog Summit 갔다가 충격받고 ,  
-> 집에 오자마자 시작된 모니터링 SophieLabs.”
+> “Datadog Summit 갔다가 충격받고,  
+> 집에 오자마자 시작된 새로윤 SophieLabs.”
 > LLM을 눈으로 보는 간단한 Workshop 정도의 프로젝트입니다!
 > 제가 들은 WorkShop은 LLM Observability 입니다!  Datadog Learning Center에서 간단하게 해보실 수 있어요!
 
@@ -35,6 +36,12 @@ Datadog과 Grafana를 이용해 한눈에 볼 수 있게 만드는 프로젝트�
 ---
 
 ## 기술 요약 
+##### 다이어그램 이미지는 업데이트 할 때 마다 반영되기 어려울 수도 있어요! 
+<div align="center">
+<img src="https://github.com/user-attachments/assets/25e2e860-de10-4392-af93-69638ea4b1dc" width="400" />
+<img src="https://github.com/user-attachments/assets/852ee3b2-6aa1-4f51-a409-bb1ef19a4ac6" width="400" />
+</div>
+
 | feature | desc |
 |------|------|
 |  **LLM Observability** | Model의 input/output, latenacy, error rate, used Token 등등 Tracingg |
@@ -45,6 +52,24 @@ Datadog과 Grafana를 이용해 한눈에 볼 수 있게 만드는 프로젝트�
 |  **RAG 구조** | 문서 검색 + LLM 결합형 답변 생성 | 
 
 ---
+
+## Tech Stack
+
+<p align="center">
+  <img src="https://img.shields.io/badge/LLM-LLaMA3.1-ff69b4?style=for-the-badge&logo=meta&logoColor=white"/>
+  <img src="https://img.shields.io/badge/RAG-Architecture-blue?style=for-the-badge&logo=OpenAI&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Datadog-Observability-purple?style=for-the-badge&logo=datadog&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Grafana-Tempo-orange?style=for-the-badge&logo=grafana&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Prometheus-Metrics-red?style=for-the-badge&logo=prometheus&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Loki-Logs-green?style=for-the-badge&logo=grafana&logoColor=white"/>
+  <img src="https://img.shields.io/badge/OpenTelemetry-Tracing-00a3e0?style=for-the-badge&logo=opentelemetry&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Streamlit-UI-FE5E54?style=for-the-badge&logo=streamlit&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Dash-UI-008DE4?style=for-the-badge&logo=plotly&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Ollama-LocalLLM-1c1c1c?style=for-the-badge&logo=ollama&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white"/>
+</p>
+---
+
 
 
 ## 앞으로 남은 작업들(계속 추가될 예정)
@@ -69,22 +94,8 @@ Datadog과 Grafana를 이용해 한눈에 볼 수 있게 만드는 프로젝트�
 <img width="600" alt="Image" src="https://github.com/user-attachments/assets/b685bea6-3dd8-4d86-b732-8fec4a6f5a49" />
 <img width="600" alt="Image" src="https://github.com/user-attachments/assets/70376b33-931d-4d5c-8cde-6de8628f38e0" />
 <img width="600" alt="Image" src="https://github.com/user-attachments/assets/c860a896-f186-4888-b44d-31f33eba4a77" />
-
+<img src="https://github.com/user-attachments/assets/c3dde460-7276-4456-897a-707ed77af465" width="400" />
+<img src="https://github.com/user-attachments/assets/11cc84a7-75bf-4682-8887-8e2f4638e669" width="150" />
 </div>
 
----
-## 🧩 Tech Stack
-
-<p align="center">
-  <img src="https://img.shields.io/badge/LLM-LLaMA3.1-ff69b4?style=for-the-badge&logo=meta&logoColor=white"/>
-  <img src="https://img.shields.io/badge/RAG-Architecture-blue?style=for-the-badge&logo=OpenAI&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Datadog-Observability-purple?style=for-the-badge&logo=datadog&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Grafana-Tempo-orange?style=for-the-badge&logo=grafana&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Prometheus-Metrics-red?style=for-the-badge&logo=prometheus&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Loki-Logs-green?style=for-the-badge&logo=grafana&logoColor=white"/>
-  <img src="https://img.shields.io/badge/OpenTelemetry-Tracing-00a3e0?style=for-the-badge&logo=opentelemetry&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Streamlit-UI-FE5E54?style=for-the-badge&logo=streamlit&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Dash-UI-008DE4?style=for-the-badge&logo=plotly&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Ollama-LocalLLM-1c1c1c?style=for-the-badge&logo=ollama&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white"/>
-</p>
+--- 
