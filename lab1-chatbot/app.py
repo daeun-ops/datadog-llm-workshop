@@ -1,7 +1,11 @@
 import os
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-
+from observability.dd import enable_llmobs_if_configured, enable_tracing_if_configured, enable_otel_if_configured, span, jlog
+SERVICE = "rag-api"  
+enable_llmobs_if_configured(SERVICE)
+enable_tracing_if_configured(SERVICE)
+enable_otel_if_configured(SERVICE)     # ← OTel 추가
 load_dotenv()
 
 from observability.dd import (
