@@ -1,6 +1,14 @@
 import os, requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+from observability.dd import enable_llmobs_if_configured, enable_tracing_if_configured, span
+SERVICE = "chatbot"
+enable_llmobs_if_configured(SERVICE)
+enable_tracing_if_configured(SERVICE)
+
+with span("chatbot.forward", target="api_rag"):
+    r = requests.post(f"{API_URL}/ask", json={"question":q}, timeout=120)
+
 load_dotenv()
 
 # --- Datadog LLMObs (옵션) ---
