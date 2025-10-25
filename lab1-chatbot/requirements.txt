@@ -1,0 +1,7 @@
+# ── Lab 1: `lab1-chatbot/`
+
+flask>=3.0.0
+openai>=1.40.0
+python-dotenv>=1.0.1
+# ddtrace는 선택
+# ddtrace>=2.7,<2.10
