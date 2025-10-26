@@ -1,0 +1,28 @@
+{
+  "title": "RAG Cost & Quality",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Estimated Cost (sum)",
+      "targets": [{ "expr": "sum(rag_estimated_cost_usd_total)" }],
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Estimated Cost rate (5m)",
+      "targets": [{ "expr": "sum(rate(rag_estimated_cost_usd_total[5m]))" }],
+      "gridPos": { "h": 9, "w": 18, "x": 6, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Hallucination Support (p50/p95)",
+      "targets": [
+        { "expr":"histogram_quantile(0.5, sum(rate(rag_hallucination_support_bucket[5m])) by (le))" },
+        { "expr":"histogram_quantile(0.95, sum(rate(rag_hallucination_support_bucket[5m])) by (le))" }
+      ],
+      "gridPos": { "h":9, "w":24, "x":0, "y":9 }
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}

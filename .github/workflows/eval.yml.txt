@@ -1,0 +1,30 @@
+name: RAG Eval
+
+on:
+  pull_request:
+  push:
+    branches: [ main, Featpromtail+loki, feature/** ]
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install deps
+        run: |
+          pip install -r lab2-rag/api/requirements.txt requests
+      - name: Boot API (dev)
+        run: |
+          # lightweight: run Flask app directly for CI smoke
+          export CHROMA_URL=http://localhost:8000
+          python -c "from http.server import HTTPServer, BaseHTTPRequestHandler
+class H(BaseHTTPRequestHandler):
+  def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+HTTPServer(('127.0.0.1',8000),H).serve_forever()" &
+          python lab2-rag/api/app.py &
+          sleep 8
+      - name: Eval
+        run: |
+          python lab2-rag/api/eval_ragas.py --api http://127.0.0.1:8081 --dataset data/eval.jsonl --limit 3

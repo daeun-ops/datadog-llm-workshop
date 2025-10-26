@@ -24,3 +24,7 @@ if st.button("Ask"):
                 j = r.json()
                 st.success(f"Sources={j.get('source_count',0)}")
                 st.markdown(j.get("answer",""))
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}, 200

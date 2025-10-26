@@ -1,0 +1,78 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+
+    # ─────────────────── Pipeline (Logs → Traces) ───────────────────
+    pipeline_stages:
+      - docker: {}  # 1) Docker JSON 해석
+
+      # 2) JSON 로그 우선 파싱 (권장 필드: ts/level/msg/trace_id/dd_trace_id)
+      - json:
+          expressions:
+            ts: ts | time | timestamp
+            level: level | severity | loglevel
+            msg: msg | message
+            trace_id: trace_id
+            dd_trace_id: dd_trace_id | dd.trace_id
+
+      # 3) JSON이 아니면 logfmt(key=value ...) 시도
+      - logfmt:
+          mapping:
+            level: level
+            msg: msg
+            trace_id: trace_id
+            dd_trace_id: dd_trace_id
+
+      # 4) 둘 다 아니면 regex (traceparent / trace_id= / dd_trace_id= 커버)
+      - regex:
+          expression: '(?:traceparent=(?:00-)?(?P<trace_id>[a-fA-F0-9]{32})-[a-fA-F0-9]{16}-\d{2})|(?:trace_id[=:]\s?(?P<trace_id2>[a-fA-F0-9]{32}))|(?:dd[_\.]?trace[_\.]?id[=:]\s?(?P<ddid>\d+))'
+
+      # 5) 라벨: trace_id/level
+      - labels:
+          level:
+          trace_id:
+
+      # 6) trace_id2 병합
+      - template:
+          source: trace_id
+          template: '{{ if .Value }}{{ .Value }}{{ else }}{{ .trace_id2 | default "" }}{{ end }}'
+      - labels:
+          trace_id:
+
+      # 7) dd_trace_id(10진)도 라벨로 보관
+      - template:
+          source: dd_trace_id
+          template: '{{ if .Value }}{{ .Value }}{{ else }}{{ .ddid | default "" }}{{ end }}'
+      - labels:
+          dd_trace_id:
+
+      # 8) 타임스탬프 적용
+      - timestamp:
+          source: ts
+          format: RFC3339
+
+      # 9) 큰 필드 정리 (본문만)
+      - output:
+          source: msg
+
+    # ───────── 공통 라벨 최소화 (카디널리티 주의) ─────────
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: project
