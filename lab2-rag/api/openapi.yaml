@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: RAG API
+  version: "1.0.0"
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: OK }
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        '200': { description: OK }
+  /ask:
+    post:
+      summary: Ask a question with hybrid retrieval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question: { type: string }
+                top_k: { type: integer }
+                temperature: { type: number }
+      responses:
+        '200':
+          description: Answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: { type: string }
+                  sources: { type: array, items: { type: object } }
+                  used_reranker: { type: boolean }
+                  top_k: { type: integer }
+                  model: { type: string }
+                  prompt_version: { type: string }
+        '400': { description: Bad request }
+        '429': { description: Rate limited }
+        '500': { description: LLM failure }
+  /feedback:
+    post:
+      summary: Send user feedback
+      responses:
+        '200': { description: OK }
