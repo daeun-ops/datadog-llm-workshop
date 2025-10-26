@@ -1,12 +1,10 @@
-flask>=3.0.0
-openai>=1.40.0
-python-dotenv>=1.0.1
-chromadb>=0.5.0        
-requests>=2.32.3        
-opentelemetry-api>=1.25.0
-opentelemetry-sdk>=1.25.0
-opentelemetry-exporter-datadog>=0.50b0
-ddtrace>=2.7,<2.10 # ddtrace는 OS에 따라 선택
-rapidfuzz>=3.6.0         
-FlagEmbedding>=1.2.10    
-
+flask
+python-dotenv
+chromadb
+openai>=1.0.0
+rapidfuzz>=3.6.0
+FlagEmbedding>=1.2.10
+prometheus_client>=0.20.0
+pydantic>=2.8.0
+flask-limiter>=3.5.0
+tldextract>=5.1.2
