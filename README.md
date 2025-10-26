@@ -25,10 +25,12 @@
 > 지켜보고 문제가 생기면 기사님께 고쳐주세요!!   요청해야겠죠?! <br>
 > 문제가 생기는 걸 예방하고... 문제가 터지면 해결하고... 최적화하고... 그게 우리의 ... 일이니까.... 
 >
+> #### 저는 WorkShop에서 배운걸 좀 더 심화해보려고 합니다!! 
 > - **Dash / Streamlit UI**로 질문을 던지면  
 >   → **RAG(검색 기반 AI)** 구조로 답변을 만들고  
->   → **Datadog / Grafana / Loki / Tempo / Prometheus**에서 **“AI의 flow + log + 속도 + cost”까지** 한눈에 볼 수 있어요! <br>
->   이런걸 **관측 가능성 Observability**라고 합니다!
+>   → **Datadog / Grafana / Loki / Tempo / Prometheus**에서 **“AI의 flow + log + 속도 + cost”까지** <br>
+>     한눈에 볼 수 있어요! 이런걸 우리는 **관측 가능성 Observability**라고 합니다!<br>
+>   모니터링과 옵져버빌리티의 차이를 아는 것도 굉장히 중요하답니다. 
 
 ---
 
