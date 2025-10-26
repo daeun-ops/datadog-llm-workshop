@@ -8,3 +8,4 @@ prometheus_client>=0.20.0
 pydantic>=2.8.0
 flask-limiter>=3.5.0
 tldextract>=5.1.2
+sentence-transformers>=3.0.0
