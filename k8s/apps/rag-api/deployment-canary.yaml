@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-api-canary
+  labels:
+    app: rag-api
+    version: canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-api
+      version: canary
+  template:
+    metadata:
+      labels:
+        app: rag-api
+        version: canary
+    spec:
+      containers:
+        - name: rag-api
+          image: ghcr.io/daeun-ops/rag-api:canary
+          ports:
+            - containerPort: 7000
+          env:
+            - name: CHROMA_DIR
+              value: /chroma
+            - name: AB_MODE
+              value: auto
+            - name: AB_SPLIT
+              value: "80"
+          volumeMounts:
+            - name: chroma
+              mountPath: /chroma
+      volumes:
+        - name: chroma
+          emptyDir: {}
