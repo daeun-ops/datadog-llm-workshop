@@ -13,7 +13,7 @@ spec:
       version: canary
   template:
     metadata:
-      labels:
+      labels: 
         app: rag-api
         version: canary
     spec:
