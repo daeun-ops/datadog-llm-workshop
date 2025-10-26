@@ -1,0 +1,214 @@
+version: "3.9"
+
+x-health: &default-health
+  interval: 5s
+  timeout: 3s
+  retries: 20
+  start_period: 10s
+
+networks:
+  obsnet:
+    name: obsnet
+
+volumes:
+  prometheus_data: {}
+  grafana_data: {}
+  loki_data: {}
+  tempo_data: {}
+  chroma_data: {}
+
+services:
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: datadog-agent
+    environment:
+      - DD_SITE=${DD_SITE}
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_APP_KEY=${DD_APP_KEY:-}
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_SERVICE=llm-workshop
+      - DD_VERSION=${DD_VERSION:-local}
+      - DD_APM_ENABLED=true
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_LOGS_ENABLED=true
+      - DD_CONTAINER_EXCLUDE_LOGS=name:datadog-agent
+      - DD_LOGS_CONFIG_PROCESSING_RULES=[{"type":"mask_sequences","name":"mask_keys","pattern":"(?i)(api[_-]?key|authorization|password)\\s*[:=]\\s*[^\\s,]+"}]
+      - DD_APM_REPLACE_TAGS=[{"name":"http.request.headers.authorization","pattern":".+","repl":"*****"}]
+    ports:
+      - "8126:8126"
+      - "8125:8125/udp"
+    networks: [obsnet]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "printf 'version\n' | nc -w 2 127.0.0.1 8126 || exit 1"]
+      <<: *default-health
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.102.1
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    depends_on:
+      datadog-agent:
+        condition: service_healthy
+    networks: [obsnet]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:13133/"]
+      <<: *default-health
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [obsnet]
+    ports: ["9090:9090"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      <<: *default-health
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks: [obsnet]
+    ports: ["3100:3100"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      <<: *default-health
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [obsnet]
+    depends_on:
+      loki: { condition: service_healthy }
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks: [obsnet]
+    ports: ["3200:3200", "4317:4317"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3200/ready"]
+      <<: *default-health
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      - GF_SERVER_DOMAIN=localhost
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards
+    networks: [obsnet]
+    ports: ["3000:3000"]
+    depends_on:
+      prometheus: { condition: service_healthy }
+      tempo: { condition: service_healthy }
+      loki: { condition: service_healthy }
+
+  demo-app:
+    build:
+      context: .
+      dockerfile: ./lab1-chatbot/Dockerfile
+    environment:
+      - DD_SERVICE=demo-app
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_AGENT_HOST=datadog-agent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=demo-app,service.version=0.1.0,service.namespace=workshop
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prom
+    networks: [obsnet]
+    depends_on:
+      otel-collector: { condition: service_healthy }
+      datadog-agent: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      <<: *default-health
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 768M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+  text-embedder:
+    build:
+      context: .
+    dockerfile: ./services/text-embedder/Dockerfile
+    environment:
+      - DD_SERVICE=text-embedder
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_AGENT_HOST=datadog-agent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=text-embedder,service.version=0.1.0
+    networks: [obsnet]
+    depends_on:
+      otel-collector: { condition: service_healthy }
+      datadog-agent: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5001/healthz"]
+      <<: *default-health
+
+  kb-service:
+    build:
+      context: .
+      dockerfile: ./services/kb_service/Dockerfile
+    environment:
+      - DD_SERVICE=kb-service
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_AGENT_HOST=datadog-agent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=kb-service,service.version=0.1.0
+      - EMBEDDER_URL=http://text-embedder:5001/embed
+      - CHROMA_DIR=/chroma
+      - KB_PATH=/workspace/kb_data
+      - RAW_PATH=/workspace/data
+    volumes:
+      - chroma_data:/chroma
+      - ./:/workspace:ro
+    networks: [obsnet]
+    depends_on:
+      text-embedder: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5002/healthz"]
+      <<: *default-health
+
+  rag-api:
+    build:
+      context: .
+      dockerfile: ./services/rag_api/Dockerfile
+    environment:
+      - DD_SERVICE=rag-api
+      - DD_ENV=${DD_ENV:-dev}
+      - DD_AGENT_HOST=datadog-agent
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=rag-api,service.version=0.1.0
+      - CHROMA_DIR=/chroma
+      - AB_MODE=auto
+      - AB_SPLIT=80
+    volumes:
+      - chroma_data:/chroma
+    ports:
+      - "7000:7000"
+    networks: [obsnet]
+    depends_on:
+      kb-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7000/healthz"]
+      <<: *default-health
