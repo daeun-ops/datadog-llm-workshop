@@ -1,0 +1,40 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch: {}
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+
+exporters:
+  otlp/tempo:
+    endpoint: http://tempo:4317
+    tls:
+      insecure: true
+  datadog:
+    api:
+      site: ${DD_SITE}
+      key: ${DD_API_KEY}
+    metrics:
+      histograms:
+        mode: distributions
+    traces:
+      span_name_as_resource_name: true
+
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, datadog]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [datadog]
