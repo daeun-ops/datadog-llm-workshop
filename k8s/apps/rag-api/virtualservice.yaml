@@ -1,0 +1,17 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: rag-api
+spec:
+  hosts:
+    - rag-api
+  http:
+    - route:
+        - destination:
+            host: rag-api
+            subset: stable
+          weight: 90
+        - destination:
+            host: rag-api
+            subset: canary
+          weight: 10
