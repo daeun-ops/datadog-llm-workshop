@@ -8,7 +8,7 @@ include $(ENV_FILE)
 up:
 	docker compose --env-file $(ENV_FILE) -f docker.compose.yaml up -d --build
 
-down:
+down: 
 	docker compose --env-file $(ENV_FILE) -f docker.compose.yaml down -v
 
 logs:
