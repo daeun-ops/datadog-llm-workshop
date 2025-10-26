@@ -141,3 +141,20 @@ ab-off:
 ab-status:
 	@echo "---- .env A/B status ----"
 	@grep -E '^(MODEL_NAME_ALT|PROMPT_VERSION|CANARY_RATIO)=' .env || echo "(keys not set yet)"
+.PHONY: test load sbom
+
+test:
+	python -m pytest -q
+
+load:
+	k6 run scripts/loadtest_k6.js
+
+sbom:
+	@echo "Generating SBOM..."
+	which syft >/dev/null 2>&1 || (echo "Install syft: https://github.com/anchore/syft"; exit 1)
+	syft . -o spdx-json > sbom.spdx.json
+	@echo "SBOM → sbom.spdx.json"
+
+
+
+
