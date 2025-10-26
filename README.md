@@ -79,12 +79,19 @@
 
 
 ---
-> ## 앞으로 남은 작업들(계속 추가될 예정)
+> ## What works (now)
+> 
+>- `make up` → Grafana/Prometheus/Loki/Tempo/Datadog Agent/OTel Collector/ demo-app 기동
+> - `/demo` 호출 → **동일 트레이스**가 Tempo(OTLP)와 Datadog(LLM/Trace)에 **동시에** 생성
+>- Prometheus 히스토그램에 **Exemplar(trace_id)** 부착 → Grafana 패널에서 **trace jump**
 
->- [ ] Datadog → Slack 알림 pipeline
->- [ ] LLMOps용 Airflow DAG 추가  
->- [ ] Kubernetes Helm Chart 버전 만들기  
->- [ ] Streamlit + Grafana Embed로 인터랙티브 데모화 (gpt가하라는데 이것 못하게써요! 같이 할분이 있으면 이슈 올려 올려~)
+
+---
+> ## Not yet
+> 
+> - RAG 실데이터 품질 리포트/AB 실험 프레임
+> - Datadog 대시보드/노트북 자동 “push”(수동 export JSON만 제공)
+> - Kubernetes Helm/Argo 배포 (추가 예정)
 ---
 
 
