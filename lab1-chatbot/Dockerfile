@@ -1,7 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install -U pip && pip install -r requirements.txt
-COPY app.py .
+COPY scripts/emit_demo.py /app/emit_demo.py
+RUN pip install --no-cache-dir prometheus-client opentelemetry-sdk opentelemetry-exporter-otlp protobuf flask ddtrace
 EXPOSE 8080
-CMD ["python","app.py"]
+CMD ["python", "/app/emit_demo.py"]
