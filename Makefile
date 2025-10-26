@@ -3,12 +3,12 @@ ENV_FILE := .env
 
 include $(ENV_FILE)
 
-.PHONY: up down logs tail trace-demo dashboards:push smoke
+.PHONY: up down logs tail trace-demo dashboards:push smoke kb:rebuild ab:on ab:off ab:status eval
 
 up:
 	docker compose --env-file $(ENV_FILE) -f docker.compose.yaml up -d --build
 
-down: 
+down:
 	docker compose --env-file $(ENV_FILE) -f docker.compose.yaml down -v
 
 logs:
@@ -16,18 +16,25 @@ logs:
 	docker compose -f docker.compose.yaml logs --no-color --tail=200
 
 tail:
-	docker compose -f docker.compose.yaml logs -f --tail=50 demo-app otel-collector datadog-agent
+	docker compose -f docker.compose.yaml logs -f --tail=50 rag-api kb-service text-embedder otel-collector datadog-agent
 
 trace-demo:
 	curl -s localhost:8080/demo | jq .
-	sleep 2
-	open "http://localhost:3000" || true
+
+kb:rebuild:
+	./scripts/rebuild_kb.sh
+
+ab:on:
+	docker compose exec rag-api sh -lc 'sed -i "s/^AB_MODE=.*/AB_MODE=auto/" /proc/1/environ || true'
+
+ab:off:
+	docker compose exec rag-api sh -lc 'sed -i "s/^AB_MODE=.*/AB_MODE=A/" /proc/1/environ || true'
+
+ab:status:
+	curl -s localhost:7000/healthz | jq .
 
 dashboards:push:
 	@echo "Grafana dashboards are provisioned from ./observability/grafana/dashboards"
 
-smoke: up
-	@echo "[*] Wait for health..."
-	sleep 8
-	@echo "[*] Hit demo endpoint"
-	$(MAKE) trace-demo
+eval:
+	python scripts/eval.py
