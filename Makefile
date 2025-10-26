@@ -38,3 +38,10 @@ dashboards:push:
 
 eval:
 	python scripts/eval.py
+
+PROFILE ?= tempo
+
+ENV_FILE := .env.local.$(PROFILE)
+
+up:
+	docker compose --env-file $(ENV_FILE) -f docker.compose.yaml up -d --build
