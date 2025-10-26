@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-api
+  labels:
+    app: rag-api
+    version: stable
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rag-api
+      version: stable
+  template:
+    metadata:
+      labels:
+        app: rag-api
+        version: stable
+    spec:
+      containers:
+        - name: rag-api
+          image: ghcr.io/daeun-ops/rag-api:stable
+          ports:
+            - containerPort: 7000
+          env:
+            - name: CHROMA_DIR
+              value: /chroma
+            - name: AB_MODE
+              value: A
+            - name: AB_SPLIT
+              value: "100"
+          volumeMounts:
+            - name: chroma
+              mountPath: /chroma
+      volumes:
+        - name: chroma
+          emptyDir: {}
