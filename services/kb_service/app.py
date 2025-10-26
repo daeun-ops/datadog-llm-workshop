@@ -2,22 +2,25 @@ import os,glob,json,requests
 from fastapi import FastAPI
 from ddtrace import patch
 from pydantic import BaseModel
+
 import chromadb
 from chromadb.config import Settings
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
 patch(fastapi=True)
+
 tp=TracerProvider()
 tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT","http://localhost:4317"),insecure=True)))
 trace.set_tracer_provider(tp)
+
 app=FastAPI()
 CHROMA_DIR=os.getenv("CHROMA_DIR","/chroma")
 KB_PATH=os.getenv("KB_PATH","/workspace/kb_data")
 RAW_PATH=os.getenv("RAW_PATH","/workspace/data")
 EMBEDDER=os.getenv("EMBEDDER_URL","http://text-embedder:5001/embed")
+
 client=chromadb.PersistentClient(path=CHROMA_DIR,settings=Settings(allow_reset=True,anonymized_telemetry=False))
 col=client.get_or_create_collection("kb")
 
