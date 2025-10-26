@@ -1,0 +1,31 @@
+{
+  "title": "LLM SLO (Mini)",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "RAG Retrieve Latency (p95)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(rag_retrieve_latency_seconds_bucket[5m])) by (le))" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Generate Latency (p95)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(rag_generate_latency_seconds_bucket[5m])) by (le))" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests",
+      "targets": [
+        { "expr": "sum(rate(rag_requests_total[5m]))" }
+      ],
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 8 }
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1
+}
