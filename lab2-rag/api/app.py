@@ -1,7 +1,4 @@
-# ------------------------------------------------------------
-# lab2-rag/api/app.py  (SECURE + MLOps)
-# ------------------------------------------------------------
-import os, json, time
+import os, json, time, datetime
 from typing import List, Tuple, Optional
 
 from flask import Flask, request, jsonify, make_response
@@ -9,15 +6,17 @@ from dotenv import load_dotenv
 from chromadb import HttpClient
 from openai import OpenAI
 
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel, ValidationError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from utils.pii import mask_pii
 from security.guardrails import contains_injection, external_links, is_external_domain
+from .prompts import get_prompt
+from .costs import estimate_cost_usd
+from .hallu import support_score
 
-# ---- Observability helpers ----
 try:
     from observability.dd import (
         enable_llmobs_if_configured,
@@ -50,18 +49,6 @@ enable_llmobs_if_configured(SERVICE)
 enable_tracing_if_configured(SERVICE)
 enable_otel_if_configured(SERVICE)
 
-if os.getenv("DD_LLMOBS_ENABLED","0") == "1":
-    try:
-        from ddtrace.llmobs import LLMObs
-        LLMObs.enable(
-            ml_app=os.getenv("DD_LLMOBS_ML_APP", "rag-api"),
-            api_key=os.getenv("DD_API_KEY"),
-            site=os.getenv("DD_SITE", "datadoghq.com"),
-            agentless_enabled=os.getenv("DD_LLMOBS_AGENTLESS_ENABLED", "true"),
-        )
-    except Exception as e:
-        print(f"[DD] LLMObs not active: {e}")
-
 def openai_client() -> OpenAI:
     base = os.getenv("OPENAI_BASE_URL")
     key = os.getenv("OPENAI_API_KEY")
@@ -72,31 +59,6 @@ def openai_client() -> OpenAI:
 client = openai_client()
 MODEL_MAIN = os.getenv("MODEL_NAME", "llama3.1")
 MODEL_ALT  = os.getenv("MODEL_NAME_ALT", "llama3.1")
-
-PROMPT_V1 = """You are a helpful assistant. Use ONLY the CONTEXT to answer.
-
-CONTEXT:
-{ctx}
-
-QUESTION: {q}
-Rules:
-- If the answer is not in the context, say "I'm not sure."
-- Be concise and cite short snippets if helpful.
-"""
-PROMPT_V2 = """ROLE: Knowledge-grounded assistant. Respond only from CONTEXT.
-
-CONTEXT:
-{ctx}
-
-Q: {q}
-ANSWER FORMAT (JSON):
-{{
- "answer": "...",
- "citations": [],
- "confidence": 0.0
-}}
-If missing info: answer "I'm not sure."
-"""
 PROMPT_VERSION_DEFAULT = os.getenv("PROMPT_VERSION","v1")
 CANARY_RATIO = float(os.getenv("CANARY_RATIO","0.0"))
 
@@ -125,13 +87,12 @@ if RERANK_ENABLED and FlagReranker:
     except Exception as e:
         print(f"[RAG] Re-ranker not available: {e}")
 
-# --------------------------
-# Metrics
-# --------------------------
 REQUESTS = Counter("rag_requests_total", "Total /ask calls", ["model", "prompt_version"])
 RETRIEVE_LAT = Histogram("rag_retrieve_latency_seconds", "Retrieval latency (s)")
 GENERATE_LAT = Histogram("rag_generate_latency_seconds", "Generation latency (s)")
 ANSWER_LEN   = Histogram("rag_answer_length_chars", "Answer length (chars)")
+COST_USD     = Counter("rag_estimated_cost_usd_total", "Estimated total cost (USD)")
+HALLU_SCORE  = Histogram("rag_hallucination_support", "Support score 0..1 (higher=more supported)")
 
 def current_trace_id_hex() -> Optional[str]:
     try:
@@ -193,6 +154,7 @@ def hybrid_retrieve(query: str, topk: int = TOP_K):
         with span("rag.rerank", model=RERANK_MODEL, batch=RERANK_BATCH):
             pairs = [(query, d["text"]) for (d, _) in top]
             try:
+                from FlagEmbedding import FlagReranker as _F; _ = _F
                 scores = reranker.compute_score(pairs, batch_size=RERANK_BATCH)
                 reranked = list(zip([t[0] for t in top], [float(s) for s in scores]))
                 reranked.sort(key=lambda x: x[1], reverse=True)
@@ -217,17 +179,20 @@ def choose_prompt_version() -> str:
     return pv if pv in ("v1","v2") else PROMPT_VERSION_DEFAULT
 
 def build_prompt(pv: str, q: str, ctx: str) -> str:
-    return (PROMPT_V2 if pv=="v2" else PROMPT_V1).format(q=q, ctx=ctx)
+    return get_prompt(pv, q, ctx)
+
+def dd_link(trace_id_hex: str|None) -> Optional[str]:
+    base = os.getenv("DD_SITE", "datadoghq.com")
+    # simple deep link (user can adjust org/app params)
+    return f"https://app.{base}/apm/traces?query={trace_id_hex}" if trace_id_hex else None
+
+def tempo_link(trace_id_hex: str|None) -> Optional[str]:
+    # Assume local Grafana Tempo via Explore → tempo
+    graf = os.getenv("GRAFANA_URL", "http://localhost:3000")
+    return f"{graf}/explore?left=%5B%22now-1h%22,%22now%22,%22Tempo%22,%7B%22query%22:%22{trace_id_hex}%22%7D%5D" if trace_id_hex else None
 
 app = Flask(__name__)
-
-# ---- Rate limit (IP 기준 + 헤더 우선) ----
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["120 per minute"],  # 전체 기본
-    storage_uri="memory://",
-)
+limiter = Limiter(get_remote_address, app=app, default_limits=["120/minute"], storage_uri="memory://")
 
 @app.after_request
 def security_headers(resp):
@@ -240,17 +205,15 @@ def security_headers(resp):
 def healthz():
     return {"ok": True, "service": SERVICE}, 200
 
-@app.get("/openapi")
-def openapi():
-    try:
-        with open(os.path.join(os.path.dirname(__file__), "openapi.yaml"), "r", encoding="utf-8") as f:
-            return make_response(f.read(), 200, {"Content-Type":"application/yaml"})
-    except Exception:
-        return {"error":"openapi_not_found"}, 404
-
 @app.get("/metrics")
 def metrics():
     return generate_latest(), 200, {"Content-Type": CONTENT_TYPE_LATEST}
+
+@app.get("/openapi")
+def openapi():
+    p = os.path.join(os.path.dirname(__file__), "openapi.yaml")
+    if not os.path.exists(p): return {"error":"openapi_not_found"}, 404
+    return make_response(open(p,"r",encoding="utf-8").read(), 200, {"Content-Type":"application/yaml"})
 
 @app.post("/feedback")
 @limiter.limit("10/minute")
@@ -259,19 +222,18 @@ def feedback():
     data = request.get_json(silent=True) or {}
     data["ts"] = time.time()
     with open("./data/feedback.jsonl","a",encoding="utf-8") as f:
-        f.write(json.dumps(data, ensure_ascii=False) + "\n")
+        f.write(json.dumps(data, ensure_ascii=False)+"\n")
     jlog(event="feedback", payload=data)
     return {"ok": True}, 200
 
 @app.post("/ask")
-@limiter.limit("60/minute")  # per-IP rate limit
+@limiter.limit("60/minute")
 def ask():
     payload = request.get_json(silent=True) or {}
     raw_q = (payload.get("question") or "").strip()
     if not raw_q:
         return jsonify({"error":"question is required"}), 400
 
-    # 1) 가드레일: PII 마스킹 + 인젝션/외부링크 차단
     q = mask_pii(raw_q)
     if contains_injection(q):
         return jsonify({"error":"prompt_injection_detected"}), 400
@@ -281,6 +243,7 @@ def ask():
 
     topk = int(payload.get("top_k", TOP_K))
     temperature = float(payload.get("temperature", os.getenv("TEMPERATURE","0.2")))
+    explain = bool(payload.get("explain", False))  # Transparency Mode
 
     model = choose_model()
     pv = choose_prompt_version()
@@ -290,21 +253,22 @@ def ask():
     with span("rag.retrieve", top_k=topk, index=INDEX_NAME, rerank=bool(reranker)):
         docs = hybrid_retrieve(q, topk=topk)
     rt = time.time() - t0
-    ex = current_trace_id_hex()
-    if ex: RETRIEVE_LAT.observe(rt, exemplar={'trace_id': ex})
-    else:  RETRIEVE_LAT.observe(rt)
+    exid = current_trace_id_hex()
+    if exid: RETRIEVE_LAT.observe(rt, exemplar={'trace_id': exid})
+    else:    RETRIEVE_LAT.observe(rt)
 
     contexts = [d["text"] for (d, _) in docs]
     context_text = "\n\n".join(contexts)
 
     prompt = build_prompt(pv, q, context_text)
-    resp_text = None
     tries, gen_latency, last_err = 0, 0.0, None
+    completion = None
 
-    while tries < 2 and resp_text is None:
+    while tries < 2 and completion is None:
         tries += 1
         t1 = time.time()
-        with span("llm.generate", model=model, provider="ollama", temperature=temperature, prompt_version=pv, attempt=tries):
+        with span("llm.generate", model=model, provider="ollama",
+                  temperature=temperature, prompt_version=pv, attempt=tries):
             try:
                 out = client.chat.completions.create(
                     model=model,
@@ -314,50 +278,78 @@ def ask():
                     ],
                     temperature=temperature,
                 )
-                resp_text = out.choices[0].message.content
+                completion = out.choices[0].message.content
             except Exception as e:
-                last_err = str(e); resp_text = None
+                last_err = str(e)
+                completion = None
         gen_latency = time.time() - t1
 
-        if resp_text and pv=="v2":
+        if completion and pv=="v2":
             try:
-                AnswerV2.model_validate_json(resp_text)
+                AnswerV2.model_validate_json(completion)
             except ValidationError:
                 if tries < 2:
                     temperature = max(0.0, temperature - 0.2)
-                    resp_text = None
+                    completion = None
                 else:
-                    resp_text = json.dumps({"answer": resp_text, "citations": [], "confidence": 0.5})
+                    completion = json.dumps({"answer": completion, "citations": [], "confidence": 0.5})
 
-    if ex: GENERATE_LAT.observe(gen_latency, exemplar={'trace_id': ex})
-    else:  GENERATE_LAT.observe(gen_latency)
+    if exid: GENERATE_LAT.observe(gen_latency, exemplar={'trace_id': exid})
+    else:    GENERATE_LAT.observe(gen_latency)
 
-    if not resp_text:
+    if not completion:
         jlog(event="llm.error", error=last_err or "unknown")
         return jsonify({"error":"llm_failed","detail": last_err}), 500
 
-    ANSWER_LEN.observe(len(resp_text))
-    jlog(event="rag.answer", question=q, source_count=len(contexts),
-         rerank=bool(reranker), top_k=topk, model=model, prompt_version=pv,
-         latency_retrieve_ms=int(rt*1000), latency_generate_ms=int(gen_latency*1000))
+    supp = support_score(completion, contexts)
+    HALLU_SCORE.observe(supp)
 
-    sources = [{"id": d["id"], "metadata": d["metadata"], "dense_sim": d["dense_sim"]} for (d, _) in docs]
+    est_cost = estimate_cost_usd(model, prompt, completion)
+    COST_USD.inc(est_cost)
 
-    parsed_v2 = None
-    if pv=="v2":
-        try: parsed_v2 = AnswerV2.model_validate_json(resp_text).model_dump()
-        except Exception: parsed_v2 = None
+    os.makedirs("./data/sessions", exist_ok=True)
+    sess_file = f"./data/sessions/{datetime.date.today().isoformat()}.jsonl"
+    rec = {
+        "ts": time.time(),
+        "q": q,
+        "answer": completion,
+        "model": model,
+        "prompt_version": pv,
+        "top_k": topk,
+        "support": supp,
+        "estimated_cost_usd": round(est_cost, 6),
+        "trace_id": exid,
+        "sources": [{"id": d["id"], "metadata": d["metadata"], "dense_sim": d["dense_sim"]} for (d, _) in docs],
+    }
+    with open(sess_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    return jsonify({
-        "answer": resp_text,
-        "parsed": parsed_v2,
-        "sources": sources,
+    jlog(event="rag.answer",
+         question=q, source_count=len(contexts), rerank=bool(reranker),
+         top_k=topk, model=model, prompt_version=pv,
+         latency_retrieve_ms=int(rt*1000), latency_generate_ms=int(gen_latency*1000),
+         support=round(supp,3), estimated_cost_usd=round(est_cost,6))
+
+    resp = {
+        "answer": completion,
+        "sources": rec["sources"],
         "used_reranker": bool(reranker),
         "top_k": topk,
         "model": model,
         "prompt_version": pv,
         "temperature": temperature,
-    })
+        "support": round(supp,3),
+        "estimated_cost_usd": round(est_cost,6),
+    }
+
+    if explain:
+        resp["trace_id"] = exid
+        resp["trace_link_datadog"] = dd_link(exid)
+        resp["trace_link_tempo"] = tempo_link(exid)
+        resp["prompt"] = prompt
+        resp["contexts"] = contexts
+
+    return jsonify(resp), 200
 
 if __name__ == "__main__":
     app.run(host=os.getenv("HOST","0.0.0.0"), port=int(os.getenv("PORT","8081")), debug=False)
