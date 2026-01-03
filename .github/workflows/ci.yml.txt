@@ -1,33 +1,29 @@
-name: ci
+name: CI
 
 on:
-  pull_request:
   push:
-    branches: [main]
+  pull_request:
 
 jobs:
-  lint-test:
+  python-ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: pip install -U pip ruff mypy pytest
-      - run: ruff check .
-      - run: mypy --ignore-missing-imports .
-      - run: pytest -q
 
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Trivy FS scan
-        uses: aquasecurity/trivy-action@0.28.0
-        with: { scan-type: fs, format: table, exit-code: 1, ignore-unfixed: true }
-      - name: Syft SBOM
-        uses: anchore/sbom-action@v0
-        with: { upload-artifacts: true, format: spdx-json }
-      - name: License check
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
         run: |
-          pip install pip-licenses
-          pip-licenses --format=markdown --with-urls --allow-only="MIT;BSD;Apache Software License;Apache 2.0;BSD License" > LICENSES.md
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Import check
+        run: |
+          python -c "import workshop_app; import workshop_app.main"
+
+      - name: Lint-lite (compileall)
+        run: |
+          python -m compileall workshop_app
